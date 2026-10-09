@@ -1,0 +1,68 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# PONK 控制面配置（`ponk-control serve` 读取；docs/13 §5.1）
+#
+# 位置：`crates/control/control.toml`（约定位置）——从仓库根启动也能被找到；
+#       也可放在任意目录并用 `--config <path>` 指定。
+# 用法：cp crates/control/control.example.toml crates/control/control.toml
+#       scripts/serve-control.sh            # 或 cargo run -p ponk-control -- serve
+#
+# 优先级：**CLI 参数 > 本文件 > 内置默认**；**不读环境变量**（密钥不散落进程环境）。
+# 查找顺序：--config <path> > ./control.toml > crates/control/control.toml
+# 存储路径：[store].path 为**相对路径**时以本文件所在目录为基准。
+# 安全  ：本文件含 JWT 密钥与首启口令 —— chmod 600 control.toml，勿提交进版本库。
+# ─────────────────────────────────────────────────────────────────────────────
+
+instance = "cp-1"                  # 控制面实例 id（进 publisher 与审计）
+# publisher = "cp-1/api"           # 审计里的发布者，默认 <instance>/api
+
+[store]
+path = "./control-store"           # SQLite 目录（docs/12 §1.2，WAL 单文件）
+
+[http]
+addr = "127.0.0.1:8080"            # 有值即开启 HTTP；注释掉 = 只跑总线侧
+# enabled = false                  # 显式关闭（即使写了 addr 也不开）
+
+[auth]
+jwt_secret = "CHANGE-ME_use_openssl_rand_-hex_32"   # HS256 密钥（开 HTTP 必填）
+jwt_ttl = "8h"                     # 令牌有效期：8h / 30m / 900 / 45s
+bootstrap = "default"              # default=空库建 admin ｜ none=不建（登录 403 no_users）
+# admin_password = "..."           # 首启管理员口令；缺省内置 admin123（生产必须覆盖）
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 外部数据源（docs/14 §8）：币信息的链 / 合约 / Twitter / 发行流通
+#
+# **不进八域**：与 jwt_secret 同一处理——这是连接凭据与调优参数，不是平台配置。
+# 节拍独立：交易所同步每 5 分钟，外部币同步默认 1 小时（OFFCHAIN_SYNC_INTERVAL_MS）。
+# 落 `offchain_sync_run`（与 `sync_run` 分离）——CG 限速/失败不会伪装成交易所同步失败。
+# ─────────────────────────────────────────────────────────────────────────────
+[providers]
+coin = "coingecko"                  # coingecko | coinmarketcap（后者只留骨架）
+# coin_api_key = "..."              # 可选：CG Demo 档无需；CMC 必填
+offchain_interval = "1h"            # 外部同步节拍（1h / 30m / 45s / 裸秒数）
+coin_market_page_size = 250         # /coins/markets 分页大小（CG 上限 250）
+coin_detail_batch = 20              # 每轮轮转拉取的详情币数（≈900/20 ≈ 一周扫完）
+coin_detail_max_retries = 2         # 详情拉取重试次数（429 不重试）
+coin_timeout_ms = 10000             # 单次请求超时
+# ── 交易所取数（统一经 dig3 连接器层，docs/09 §2.4）──────────────────────────
+# transport（端点发现、限速、超时、镜像路由）归 dig3；控制面只做平台语义归一化。
+# 未接线时症状 = 页面点「立即同步」永远 changed=false、交易对表永远为空。
+exchange_timeout_ms = 10000          # 单次请求超时（ms）——覆盖 dig3 内置的 30s
+exchange_cooldown_ms = 60000         # 连接失败冷却：期间跳过该 base
+
+# base 候选表：键 = "<venue>.<market>"（另有 "<venue>.currencies" 币信息）。
+# 值 = **origin 列表，不含 path/query** —— 路径由 dig3 的端点定义自己拼。
+# 按序 failover，首个成功的胜出；**按键覆盖**内置默认，未列出的键沿用默认。
+# 每个 (venue, market) 各建独立 ExchangeHub：dig3 的 rest_override 是 per-ExchangeId
+# 的，spot 与 swap 共用一个会互相污染（Binance 这两台本来就不同：api. vs fapi.）。
+# 未列出的键 = 未核对端点 → 同步如实记 unsupported，不猜端点。
+[providers.dig3_rest_base]
+"binance.spot" = [
+  "https://data-api.binance.vision",   # 官方公开数据镜像（主端点在部分网络下超时）
+  "https://api.binance.com",
+]
+"binance.swap" = ["https://fapi.binance.com"]
+"okx.spot"     = ["https://www.okx.com"]
+"okx.swap"     = ["https://www.okx.com"]
+# 币信息只有 OKX 有公开端点；Binance 的 coin config 需签名 → 不给键
+# （dig3 侧返回 WireAbsent，同步如实记 unsupported）
+"okx.currencies" = ["https://www.okx.com"]

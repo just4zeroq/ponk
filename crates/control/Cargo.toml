@@ -1,0 +1,28 @@
+[package]
+name = "ponk-control"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "PONK 控制面：配置事实来源 + 指派器 + 状态观测面（docs/09）"
+
+[dependencies]
+ponk-protocol.workspace = true
+ponk-eventcenter.workspace = true
+# 09 §2.4：交易所取数（交易对 + 币信息）统一经 dig3 连接器层，不再自己发 HTTP
+digdigdig3.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+toml = "1.1.6"
+axum = "0.8.9"
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
+argon2 = "0.6.0"
+jsonwebtoken = { version = "11.1.0", features = ["rust_crypto"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+
+[dev-dependencies]
+# 测试用内存 backend（03 §7：完整契约层语义，无外部服务）
+# tempfile：SQLite 临时库（每个测试一个独立目录，避免共享 -wal）
+tempfile = "3"
+tower = { version = "0.5.3", features = ["util"] }

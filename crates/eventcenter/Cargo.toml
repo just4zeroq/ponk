@@ -1,0 +1,27 @@
+[package]
+name = "ponk-eventcenter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ponk-protocol.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+# 03 §7.1 Redis Streams backend（feature 门控）
+redis = { workspace = true, optional = true }
+
+[features]
+default = []
+# 真实实现：消费组 / XAUTOCLAIM / DLQ（03 §7.1、§9-3）
+redis = ["dep:redis"]
+# 03 §7.1：仅骨架，能力标注「未实测」
+kafka = []
+nats = []
+iggy = []
+
+[dev-dependencies]
+# 测试夹具构造行情体（03 §5.3 data 复用 dig3 类型）
+digdigdig3-core.workspace = true

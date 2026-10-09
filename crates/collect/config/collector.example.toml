@@ -1,0 +1,109 @@
+# PONK 采集进程订阅计划 —— 本地配置形态（docs/03 §5.3 `SubscribePlan` / `ShardPlan`）
+#
+# TODO(控制面 / docs/09)：控制面尚未实现，采集器**只读本地文件**。
+# 将来改为经 `ctl.collector.<instance>` 推送 / `ctl.request.<instance>` 拉取，
+# 字段一一对应，见 crates/collect/src/config.rs。
+#
+# 一个进程可承载**多个 (venue, market) 分片，可跨所**（docs/02 §4）。
+# 标的白名单 = 控制面下发；采集不做发现，白名单之外一律不采（docs/02 §1）。
+
+instance_id = "collector-01"
+assignment_version = 1          # = 心跳 applied_version；TODO(控制面) 改为命令信道版本
+mode = "snapshot"               # snapshot | diff
+
+# 核心集（docs/02 §6：candle_1m 仅核心集可 REST 降级，其余交回补节点）
+core_set = ["BTCUSDT", "ETHUSDT"]
+
+[heartbeat]
+interval_ms = 5000              # 10 §5：心跳 5s
+backlog_warn = 1024             # 仅作 06 告警阈值参考，不做背压（10 §3）
+
+[reconnect]
+silence_timeout_ms = 60000      # 连接级静默 → 重连（02 §6）；**不报静默**，告警归 06
+disconnected_grace_ms = 10000   # 连续 Disconnected 宽限（给 dig3 自动重连留时间）
+backoff_min_ms = 1000
+backoff_max_ms = 30000
+max_attempts = 0                # 0 = 无限重试（02 §6「只重连」不放弃）
+poll_ms = 1000                  # 状态轮询间隔
+
+[degrade]
+enabled = true                  # REST 降级（02 §6）；trade 永不降级
+poll_interval_ms = 1000
+max_instruments_per_round = 200
+
+[publish]
+retries = 3                     # 10 §3：发送失败重试
+retry_ms = 50
+queue_capacity = 8192           # 满即丢并计数 —— 10 §3 明确不做背压
+
+# ── 配额：按 venue 各自的令牌桶，所间不串（02 §6） ──────────────────────────
+[quota]
+enabled = true
+
+[quota.default]
+capacity = 60.0
+refill_per_sec = 10.0
+cost = 1.0
+
+# 按所覆盖；配额域 = (venue, 出口 IP)（01 / 定案 C）
+[quota.venue.okx]
+capacity = 40.0
+refill_per_sec = 6.0
+
+# TODO(控制面)：02 §6 的角色份额（采集 ~50% / 回填 ~35% / 元数据 ~15%）
+# 由控制面按 IP 下发；「回填」份额**不属于采集进程**。
+[quota_share]
+share_bp = 5000
+weight_per_min = 6000
+egress_ip = "203.0.113.10"
+
+# ── 分片：逻辑分片 = (venue, market, shard_idx)（02 §4） ─────────────────────
+# 全市场通道（ticker / l1）**不分片**：shard_idx 必须为 0（02 §4）。
+
+[[shards]]
+venue = "binance"
+market = "spot"
+shard_idx = 0
+channels = ["ticker", "l1", "trade"]   # 该分片标的的默认通道集
+
+[[shards.instruments]]
+native_code = "BTCUSDT"
+base = "BTC"
+quote = "USDT"
+price_precision = 2
+amount_precision = 3
+tick_size = "0.01"
+lot_size = "0.001"
+
+[[shards.instruments]]
+native_code = "ETHUSDT"
+base = "ETH"
+quote = "USDT"
+price_precision = 2
+amount_precision = 3
+# 标的级 channels 覆盖分片级默认值
+channels = ["ticker", "trade"]
+
+[[shards]]
+venue = "binance"
+market = "swap"
+shard_idx = 0
+channels = ["candle_1m", "funding"]    # funding 仅永续（02 §2）
+
+[[shards.instruments]]
+native_code = "BTCUSDT"
+base = "BTC"
+quote = "USDT"
+price_precision = 1
+amount_precision = 0
+
+[[shards]]
+venue = "okx"
+market = "spot"
+shard_idx = 0
+channels = ["ticker", "trade"]
+
+[[shards.instruments]]
+native_code = "BTC-USDT"
+base = "BTC"
+quote = "USDT"

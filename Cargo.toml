@@ -1,0 +1,58 @@
+[workspace]
+members = ["crates/protocol", "crates/eventcenter", "crates/control", "crates/collect"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+ponk-protocol = { path = "crates/protocol" }
+ponk-eventcenter = { path = "crates/eventcenter" }
+serde = { version = "1", features = ["derive"] }
+# preserve_order：让 serde_json::Map 按文本插入序而非 BTreeMap 排序 ——
+# 规范化视图必须自己做「递归键排序」（03 §5.4），测试据此可真正证明跨键序一致性。
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+# 03 §5.4 内容哈希（规范化视图上计算，与序列化格式无关）
+sha2 = "0.10"
+# 03 §6 序列化：JSON 默认 + MessagePack 配置项
+rmp-serde = "1"
+# 03 §5.3 行情体 data 复用 dig3 类型（仅数据类型层，无连接器）
+# dig3 类型唯一实例：必须与 collect 的连接器层同一 path 源，否则 workspace 里
+# 两个 core 实例并存 → MarketBody::data 类型对不上（采集侧曾被迫 JSON 重绑定）
+digdigdig3-core = { version = "0.3.30", path = "../digdigdig3/crates/dig3-core" }
+# 09 §2.4 交易所取数统一走 dig3 连接器层（控制面的交易对/币信息同步；
+# 采集侧 collect 也依赖同一 path —— 同一 crate 只编一次，不新增编译产物）
+digdigdig3 = { path = "../digdigdig3/crates/digdigdig3" }
+# 03 §7.1 Redis Streams backend（feature 门控）
+redis = { version = "1", features = ["streams"] }
+
+
+# ── 编译体积优化（D 盘 76G 且本会话反复满盘：清过 3 次增量缓存、1 次 pdb）──────
+#
+# 体积三巨头：
+#   ① 调试信息 —— `deps/*.pdb` 实测 3.8G（109 个）
+#   ② 增量缓存 —— `target/debug/incremental` 实测 3.0~5.7G，反复再生
+#   ③ 测试/运行二进制本身（link 产物）
+#
+# 1) 依赖不要任何调试信息：占 `deps` 体积大头，且我们从不调试 tokio / dig3 / 密码学内部
+[profile.dev.package."*"]
+debug = false
+[profile.test.package."*"]
+debug = false
+
+# 2) 自己的代码保留**行号级**信息（`line-tables-only`）：panic 断言自带 file:line（不依赖
+#    DWARF），而栈回溯仍能定位到源码行——比 full debug 小得多，比完全关掉好排查。
+[profile.dev]
+debug = "line-tables-only"
+incremental = false          # 关闭增量：曾三次吃满磁盘；代价 = 改一个 crate 全量重编该 crate
+
+[profile.test]
+debug = "line-tables-only"
+
+# 3) 未来发布产物：strip 掉符号（只影响 release 构建，不改当前开发循环）
+[profile.release]
+strip = true

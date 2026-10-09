@@ -1,0 +1,36 @@
+[package]
+name = "ponk-collect"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "PONK 行情采集器（docs/02）：dig3 连接器层之上的平台适配"
+
+[dependencies]
+ponk-protocol.workspace = true
+ponk-eventcenter.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+# dig3 连接器层（ExchangeHub + REST/WS 连接器 + core 类型）。
+# 不依赖 dig3-station（02 §1：station 已从设计中移除，自愈由本 crate 的 reconnect 自建）。
+#
+# 根 Cargo.toml 已把 `digdigdig3-core` 指向本地 path，workspace 里只有**一个** core 实例，
+# 故 dig3 连接器层吐出的 `Kline/Ticker/...` 与 `ponk_protocol::MarketData` 的载荷**同类型**，
+# 无需任何重绑定（原先的 `payload::bridge` 已删）。
+# 注：path 相对本 manifest（crates/collect/），需三级 `..` 才到 D:\code\github。
+digdigdig3 = { path = "../../../digdigdig3/crates/digdigdig3" }
+
+async-trait = "0.1"
+futures-util = "0.3"
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread", "time", "sync"] }
+
+[[example]]
+name = "live_smoke"
+path = "examples/live_smoke.rs"
